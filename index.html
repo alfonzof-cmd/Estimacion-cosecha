@@ -79,7 +79,7 @@
 
   <div id="status" class="status-bar offline">⏳ Conectando...</div>
 
-  <!-- Instructivo de Campo (Intacto) -->
+  <!-- Instructivo de Campo -->
   <details open>
     <summary>📋 Instrucciones: ¿Cómo realizar la evaluación en campo?</summary>
     <ol>
@@ -111,7 +111,7 @@
     <div class="grid-2">
       <div class="form-group">
         <label for="fecha-siembra">Fecha de Siembra:</label>
-        <input type="date" id="fecha-siembra" onchange="actualizarFechaEstimadaCosecha()">
+        <input type="date" id="fecha-siembra" onchange="alCambiarFechaSiembra()">
       </div>
       <div class="form-group">
         <label for="fecha-cosecha">Fecha Est. Cosecha (+120d):</label>
@@ -122,12 +122,17 @@
     <div class="grid-2">
       <div class="form-group">
         <label for="fecha-eval">Fecha de Muestreo:</label>
-        <input type="date" id="fecha-eval">
+        <input type="date" id="fecha-eval" onchange="calcularEdadCultivo()">
       </div>
       <div class="form-group">
-        <label for="lote-nombre">Lote / Parcela:</label>
-        <input type="text" id="lote-nombre" placeholder="Ej: Lote 1 o Sector Norte">
+        <label for="edad-cultivo">Edad Cultivo (Días):</label>
+        <input type="number" id="edad-cultivo" readonly style="background-color: #e9ecef; font-weight: bold; color: var(--primary);" placeholder="Ej: 60">
       </div>
+    </div>
+
+    <div class="form-group">
+      <label for="lote-nombre">Lote / Parcela:</label>
+      <input type="text" id="lote-nombre" placeholder="Ej: Lote 1 o Sector Norte">
     </div>
   </div>
 
@@ -135,7 +140,7 @@
   <div class="card">
     <div class="card-title">📊 Conteo en Campo y Calculadora de Población</div>
 
-    <!-- CALCULADORA AUTOMÁTICA DE PLANTAS/HA (NUEVO CÁLCULO) -->
+    <!-- CALCULADORA AUTOMÁTICA DE PLANTAS/HA -->
     <div class="calc-box">
       <label style="color: var(--primary); font-size: 0.9rem; margin-bottom: 6px;">📐 Conteo en 5 Puntos de Muestreo</label>
       
@@ -207,7 +212,7 @@
       <textarea id="observaciones" rows="2" placeholder="Ej: Lote uniforme, buena sanidad foliar, llenado al 90%..."></textarea>
     </div>
 
-    <!-- Botones de Acción (Intactos) -->
+    <!-- Botones de Acción -->
     <button id="btnGuardar" onclick="guardarRegistro()">💾 Guardar en Google Sheets</button>
     <button class="btn-ws" onclick="compartirWhatsApp()">📲 Compartir Resultado por WhatsApp</button>
     <button class="btn-excel" onclick="exportarHistorialExcel()">📥 Descargar Reporte en Excel (.xlsx)</button>
@@ -302,7 +307,7 @@
         
         const fSiembra = p.sowing_date || p.fecha_siembra || "2026-06-26";
         document.getElementById("fecha-siembra").value = fSiembra;
-        actualizarFechaEstimadaCosecha();
+        alCambiarFechaSiembra();
 
         if (p.lotes && p.lotes.length > 0) {
           document.getElementById("lote-nombre").value = p.lotes[0].nombre || "Lote 1";
@@ -312,6 +317,11 @@
       }
     }
 
+    function alCambiarFechaSiembra() {
+      actualizarFechaEstimadaCosecha();
+      calcularEdadCultivo();
+    }
+
     function actualizarFechaEstimadaCosecha() {
       const fSiembraVal = document.getElementById("fecha-siembra").value;
       if (!fSiembraVal) return;
@@ -319,6 +329,21 @@
       const fSiembra = new Date(fSiembraVal);
       fSiembra.setDate(fSiembra.getDate() + 120);
       document.getElementById("fecha-cosecha").value = fSiembra.toISOString().substring(0, 10);
+    }
+
+    // CÁLCULO DE EDAD DEL CULTIVO (FECHA MUESTREO - FECHA SIEMBRA)
+    function calcularEdadCultivo() {
+      const fSiembraVal = document.getElementById("fecha-siembra").value;
+      const fEvalVal = document.getElementById("fecha-eval").value;
+
+      if (fSiembraVal && fEvalVal) {
+        const fechaInicio = new Date(fSiembraVal);
+        const fechaMuestreo = new Date(fEvalVal);
+        const diferenciaMs = fechaMuestreo - fechaInicio;
+        const diasTranscurridos = Math.floor(diferenciaMs / (1000 * 60 * 60 * 24));
+        
+        document.getElementById("edad-cultivo").value = diasTranscurridos >= 0 ? diasTranscurridos : 0;
+      }
     }
 
     // CALCULADORA AUTOMÁTICA DE PLANTAS POR HECTÁREA
@@ -373,6 +398,7 @@
         lote: document.getElementById("lote-nombre").value,
         fecha_siembra: document.getElementById("fecha-siembra").value,
         fecha_estimada_cosecha: document.getElementById("fecha-cosecha").value,
+        edad_cultivo_dias: document.getElementById("edad-cultivo").value,
         conteo_p1: document.getElementById("m1").value,
         conteo_p2: document.getElementById("m2").value,
         conteo_p3: document.getElementById("m3").value,
@@ -414,58 +440,17 @@
       }
     }
 
-    function compartirWhatsApp() {
-      const r = obtenerObjetoActual();
-      if (r.productor === "N/A") {
-        alert("Seleccione un productor antes de generar el reporte.");
-        return;
+    function verificarPendientes() {
+      const pendientes = JSON.parse(localStorage.getItem("registros_pendientes") || "[]");
+      const btnSync = document.getElementById("btnSync");
+      const countLabel = document.getElementById("countPendientes");
+
+      if (pendientes.length > 0) {
+        btnSync.style.display = "block";
+        countLabel.textContent = pendientes.length;
+      } else {
+        btnSync.style.display = "none";
       }
-
-      const texto = `🌽 *INFORME DE ESTIMACIÓN DE COSECHA* 🌽%0A` +
-        `----------------------------------------%0A` +
-        `👤 *Productor:* ${r.productor}%0A` +
-        `🆔 *Cédula:* ${r.cedula}%0A` +
-        `📍 *Sector / Lote:* ${r.sector} - ${r.lote}%0A` +
-        `📅 *Fecha de Siembra:* ${r.fecha_siembra}%0A` +
-        `🌾 *Est. Fecha Cosecha:* ${r.fecha_estimada_cosecha}%0A` +
-        `----------------------------------------%0A` +
-        `📊 *MUESTREO DE POBLACIÓN:*%0A` +
-        `• Puntos (1a5): [${r.conteo_p1}, ${r.conteo_p2}, ${r.conteo_p3}, ${r.conteo_p4}, ${r.conteo_p5}]%0A` +
-        `• Prom. Plantas en Muestra: ${r.promedio_plantas_muestreadas}%0A` +
-        `• Plantas/Ha Calculadas: *${r.plantas_ha}*%0A` +
-        `----------------------------------------%0A` +
-        `🌽 *COMPONENTES DE RENDIMIENTO:*%0A` +
-        `• Hileras/Mazorca: ${r.hileras}%0A` +
-        `• Granos/Hilera: ${r.granos_hilera}%0A` +
-        `• Peso 1000g: ${r.peso_1000g}g%0A` +
-        `----------------------------------------%0A` +
-        `🏆 *RENDIMIENTO ESTIMADO:*%0A` +
-        `👉 *${r.rendimiento_kg_ha}*%0A` +
-        `👉 *${r.rendimiento_qq_ha}*%0A` +
-        `----------------------------------------%0A` +
-        `📝 *Obs:* ${r.observaciones || 'Sin observaciones'}`;
-
-      window.open(`https://api.whatsapp.com/send?text=${texto}`, '_blank');
-    }
-
-    function exportarHistorialExcel() {
-      let historial = JSON.parse(localStorage.getItem("historial_evaluaciones") || "[]");
-      
-      if (historial.length === 0) {
-        const actual = obtenerObjetoActual();
-        if (actual.productor !== "N/A") {
-          historial.push(actual);
-        } else {
-          alert("No hay registros guardados ni un productor seleccionado para exportar.");
-          return;
-        }
-      }
-
-      const worksheet = XLSX.utils.json_to_sheet(historial);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Estimaciones_Cosecha");
-
-      XLSX.writeFile(workbook, `Estimacion_Cosecha_El_Furrial_${new Date().toISOString().substring(0,10)}.xlsx`);
     }
 
     async function sincronizarDatosOffline() {
@@ -473,31 +458,62 @@
       if (pendientes.length === 0) return;
 
       try {
-        await fetch(SCRIPT_URL, {
-          method: "POST",
-          mode: "no-cors",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(pendientes)
-        });
-
-        localStorage.removeItem("registros_pendientes");
+        for (let i = 0; i < pendientes.length; i++) {
+          await fetch(SCRIPT_URL, {
+            method: "POST",
+            mode: "no-cors",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(pendientes[i])
+          });
+        }
+        localStorage.setItem("registros_pendientes", "[]");
         verificarPendientes();
-      } catch (err) {
-        console.error("Error al sincronizar:", err);
+        console.log("Sincronización completada.");
+      } catch (e) {
+        console.error("Error durante la sincronización:", e);
       }
     }
 
-    function verificarPendientes() {
-      let pendientes = JSON.parse(localStorage.getItem("registros_pendientes") || "[]");
-      const btnSync = document.getElementById("btnSync");
-      const countSpan = document.getElementById("countPendientes");
-
-      if (pendientes.length > 0) {
-        btnSync.style.display = "block";
-        countSpan.textContent = pendientes.length;
-      } else {
-        btnSync.style.display = "none";
+    function compartirWhatsApp() {
+      const reg = obtenerObjetoActual();
+      if (reg.productor === "N/A") {
+        alert("Seleccione un productor primero.");
+        return;
       }
+
+      const mensaje = `🌽 *INSPECCIÓN DE CAMPO - ESTIMACIÓN DE COSECHA* 🌽%0A` +
+        `👤 *Productor:* ${reg.productor}%0A` +
+        `🆔 *Cédula:* ${reg.cedula} | *Sector:* ${reg.sector}%0A` +
+        `📍 *Lote/Parcela:* ${reg.lote}%0A` +
+        `📅 *Fecha Siembra:* ${reg.fecha_siembra}%0A` +
+        `⏱️ *Edad del Cultivo:* ${reg.edad_cultivo_dias} días%0A` +
+        `📅 *Fecha Muestreo:* ${reg.fecha_evaluacion}%0A` +
+        `🗓️ *Est. Cosecha (+120d):* ${reg.fecha_estimada_cosecha}%0A%0A` +
+        `📊 *PARÁMETROS EVALUADOS:*%0A` +
+        `• Plantas/ha: ${reg.plantas_ha}%0A` +
+        `• Mazorcas/Planta: ${reg.mazorcas_planta}%0A` +
+        `• Hileras/Mazorca: ${reg.hileras}%0A` +
+        `• Granos/Hilera: ${reg.granos_hilera}%0A` +
+        `• Peso 1,000 granos: ${reg.peso_1000g}g%0A%0A` +
+        `🏆 *RENDIMIENTO ESTIMADO:*%0A` +
+        `👉 *${reg.rendimiento_kg_ha}*%0A` +
+        `👉 *${reg.rendimiento_qq_ha}*%0A%0A` +
+        `📝 *Obs:* ${reg.observaciones || 'Sin observaciones'}`;
+
+      window.open(`https://api.whatsapp.com/send?text=${mensaje}`, '_blank');
+    }
+
+    function exportarHistorialExcel() {
+      const historial = JSON.parse(localStorage.getItem("historial_evaluaciones") || "[]");
+      if (historial.length === 0) {
+        alert("No hay registros guardados para exportar.");
+        return;
+      }
+
+      const worksheet = XLSX.utils.json_to_sheet(historial);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Estimaciones");
+      XLSX.writeFile(workbook, `Estimaciones_Cosecha_ElFurrial_${new Date().toISOString().substring(0,10)}.xlsx`);
     }
   </script>
 </body>
